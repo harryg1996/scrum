@@ -29,6 +29,7 @@ $(document).ready(function(){
             $("#column1").append(divEl);
         }
         else {
+            setStorage(foodsToPost);
             getPostedFoods(foodsToPost);
         }
     });
@@ -253,6 +254,12 @@ function getDistanceFromLatLonInKm(lat1,lon1,lat2,lon2) {
 
 function deg2rad(deg) {
   return deg * (Math.PI/180)
+}
+
+// SetStorage for the IDs of the food that will be shown on the map 
+function setStorage(array){
+	sessionStorage.setItem("data", JSON.stringify(array));
+	return;
 }
 
 // TODO eventually move notifications into global functions? 
