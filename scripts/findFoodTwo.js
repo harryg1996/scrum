@@ -258,7 +258,7 @@ function deg2rad(deg) {
 
 // SetStorage for the IDs of the food that will be shown on the map 
 function setStorage(array){
-	sessionStorage.setItem("data", JSON.stringify(array));
+	sessionStorage.setItem("mapData", JSON.stringify(array));
 	return;
 }
 
