@@ -28,6 +28,7 @@ $(document).ready(function(){
             $("#column1").append(divEl);
         }
         else {
+            setStorage(foodsToPost);
             getPostedFoods(foodsToPost);
         }
     });
@@ -319,6 +320,7 @@ function deg2rad(deg) {
   return deg * (Math.PI/180)
 }
 
+<<<<<<< HEAD
 function clearAll(){
     $("#txtKeyWord").val(" ");
         $('input:checkbox').prop('checked', false);
@@ -478,4 +480,14 @@ function openModal(){
 // TODO user button: pass in new value for the button with the username and send offff??
 
 
+=======
+// SetStorage for the IDs of the food that will be shown on the map 
+function setStorage(array){
+	mapData = JSON.stringify(array);
+	localStorage.setItem("GetData" , mapData);
+	return;
+}
+
+// TODO eventually move notifications into global functions? 
+>>>>>>> refs/remotes/origin/master
 // TODO has to loop every noe and then. Set timer??
