@@ -177,7 +177,14 @@ function filterFoods(dataPass){
             }
         }
     }
+	setStorage(foodsToPost);
     return foodsToPost;
+}
+   
+function setStorage(array){
+	mapData = JSON.stringify(array);
+	localStorage.setItem("GetData" , mapData);
+	return;
 }
    
 // Makes a list of checked filters
