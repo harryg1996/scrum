@@ -62,13 +62,16 @@ app.get("/", function(req, res) {
 });
 
 // POSTS
+// Path for saving a new or edited post
 app.post("/addPost", function(req, res) {
     var post = req.body.postToPost;
 
+    // Ensure any _id is in mongodb format (when editing a post, this ensures it REPLACES the original)
     if (post._id && typeof post._id === 'string') {
         post._id = ObjectID.createFromHexString(post._id);
     }
 
+    // Save attached images to disk if not already saved
     if (post.image && post.saveImage) {
         var regex = /^data:.+\/(.+);base64,(.*)$/;
         var matches = post.image.match(regex);
@@ -104,10 +107,12 @@ app.post("/addPost", function(req, res) {
             console.log("Saving post failed: " + err.toString());
         } else {
             console.log("Saving post success");
+            res.send("Success");
         }
     });
 });
 
+// Path for removing a post from the database
 app.post("/deletePost", function(req, res) {
     res.setHeader("Content-Type", "application/json");
     if (req.body.id) {
@@ -116,7 +121,7 @@ app.post("/deletePost", function(req, res) {
             _id: ObjectID.createFromHexString(req.body.id)
         });
         res.send(JSON.stringify({
-            note: "success?"
+            note: "success"
         }));
     } else {
         console.log("No ID for deleting");
@@ -126,6 +131,7 @@ app.post("/deletePost", function(req, res) {
     }
 });
 
+// Path to retrieve list of all posts, with the option to specify a specific post id, or a username, to limit the list
 app.get("/getPosts", function(req, res) {
     var queryObj = {};
     if (req.query.id) {
@@ -145,6 +151,7 @@ app.get("/getPosts", function(req, res) {
     });
 });
 
+// Path to remove any images that are not in use, to free disk space
 app.get("/removeUnusedImages", function(req, res) {
     console.log("Removing any unsused images...");
     var folder = "./post-images/";
@@ -180,6 +187,7 @@ app.post("/addUser", function(req, res) {
     user.rating = Number(req.body.rating);
     user.realname = req.body.realName;
     user.email = req.body.email;
+    user.settings = req.body.settings;
 
     db.collection("users").save(user, function(err, results) {
         if (err) {
@@ -226,6 +234,77 @@ app.post("/editUser", function(req, res) {
             }
         });
     }
+});
+
+// Path to apply a 1-5 rating to a specific user, and calculate their new average rating
+app.post("/rateUser", function(req, res) {
+    var rater = req.body.me;
+    var ratee = req.body.them;
+    var rating = req.body.rating;
+    if (rater && ratee && rating && rater !== ratee) {
+        db.collection("users").find({
+            username: ratee
+        }).toArray(function(err, results) {
+            if (results.length > 0) {
+                var user = results[0];
+                if (!user.ratings) {
+                    user.ratings = {};
+                }
+                user.ratings[rater] = rating;
+                var sum = 0;
+                var count = 0;
+                for (var username in user.ratings) {
+                    sum += Number(user.ratings[username]);
+                    count += 1;
+                }
+                user.rating = Math.round(10 * sum / count) / 10;
+                db.collection("users").save(user, function(err, results) {
+                    if (err) {
+                        res.send(err.toString());
+                        console.log("Updating user rating failed: " + err.toString());
+                    } else {
+                        res.send("Done");
+                        console.log("Updating user rating succeeded");
+                    }
+                });
+            }
+        });
+    }
+});
+
+// Path to retrieve a user's average rating
+app.get("/getUserRating", function(req, res) {
+    res.setHeader("Content-Type", "application/json");
+    var user = req.query.username;
+    db.collection("users").findOne({
+        username: user
+    }, function(err, document) {
+        res.send(JSON.stringify({
+            rating: document.rating,
+            username: user
+        }));
+    });
+});
+
+// Path to retrieve the specific rating of one user by another
+app.get("/getMyRatingForUser", function(req, res) {
+    res.setHeader("Content-Type", "application/json");
+    var me = req.query.me;
+    var them = req.query.them;
+    db.collection("users").findOne({
+        username: them
+    }, function(err, document) {
+        if (!err && document.ratings && document.ratings[me]) {
+            res.send(JSON.stringify({
+                rating: document.ratings[me],
+                user: them
+            }));
+        } else {
+            res.send(JSON.stringify({
+                error: "You have not rated this user"
+            }));
+        }
+    });
 });
 
 // FUNCTIONS
@@ -368,6 +447,60 @@ app.post("/sendEmail", function(req, res) {
 
     });
 
+});
+
+// ARCHIVE DATA
+
+app.post("/addArchiveData", function(req, res) {
+    var user = {};
+    user.set = "set1";
+
+    db.collection("archiveData").save(user, function(err, results) {
+        if (err) {
+            res.send(err.toString());
+            console.log("Saving archive data template failed: " + err.toString());
+        } else {
+            res.send(results);
+            console.log("Saved archive data template successfully");
+        }
+    });
+});
+
+app.get("/getArchiveData", function(req, res) {
+    db.collection("archiveData").find().toArray(function(err, results) {
+        res.setHeader("Content-Type", "application/json");
+        if (err) {
+            res.send(JSON.stringify({
+                "error": err
+            }));
+        } else {
+            res.send(JSON.stringify(results));
+        }
+    });
+});
+
+app.post("/updateArchiveData", function(req, res) {
+    var updateField = req.body.field;
+    var newValue = req.body.newValue;
+    var updateData = {};
+    updateData[updateField] = newValue;
+    if (updateField !== undefined && newValue !== undefined) {
+        db.collection("archiveData").update(
+            {
+                "set": "set1"
+            }, {
+                $set: updateData
+            },
+            function(err, results) {
+            if (err) {
+                res.send(err.toString());
+                console.log("Updating archive data failed: " + err.toString());
+            } else {
+                res.send(results);
+                console.log("Updating archive data success");
+            }
+        });
+    }
 });
 
 // CHAT
@@ -521,16 +654,19 @@ app.post("/addRoom", function(req, res) {
     });
 });
 
+// 404 route, for any unrecognised request
 app.get("*", function(req, res) {
     res.redirect('/404.html');
 });
 
-//Start server and listen on port 8080
+//Start server and listen on port 8080, if no port defined (by heroku)
 server.listen(process.env.PORT || 8080, function() {
-    console.log("Live at Port " + (process.env.PORT || "8080"));
+    console.log("Live at port " + (process.env.PORT || "8080"));
 });
 
 //Chat stuff
+var online_users = [];
+
 io.on('connection', function(socket) {
     var addedUser = false;
 
@@ -541,6 +677,7 @@ io.on('connection', function(socket) {
         }
         // store the username in the socket session for this client
         socket.username = username;
+        online_users.push(username);
         addedUser = true;
         console.log('Handshake completed with ', username);
         socket.emit('login');
@@ -564,58 +701,30 @@ io.on('connection', function(socket) {
         }
     });
 
-    // when the client emits 'toggleRoom', remove them if they're in the room, or add them if they're not
-    socket.on('toggleRoom', function(room) {
-        // Only add socket if it is not already in the room
-        if (!socket.rooms[room]) {
-            socket.join(room);
-            socket.emit('joined', room);
-        } // Only remove socket if it is already in the room
-        else {
-            socket.leave(room);
-            socket.emit('left', room);
-        }
-    });
-
-    // when the client emits 'direct message', send the msg to the given room
-    socket.on('direct message', function(room, msg) {
+    // when the client emits 'message', send the msg to the given room
+    socket.on('message', function(room, msg) {
         socket.to(room).emit('chat message', socket.username, msg);
-    });
-
-    var addedUser = false;
-
-    // when the client emits 'broadcast message', this listens and executes
-    socket.on('broadcast message', function(data) {
-        // we tell the client to execute 'new message'
-        socket.broadcast.emit('broadcast message', {
-            username: socket.username,
-            message: data
-        });
-    });
-
-    // when the client emits 'typing', we broadcast it to others
-    socket.on('typing', function() {
-        socket.broadcast.emit('typing', {
-            username: socket.username
-        });
-    });
-
-    // when the client emits 'stop typing', we broadcast it to others
-    socket.on('stop typing', function() {
-        socket.broadcast.emit('stop typing', {
-            username: socket.username
-        });
-    });
-
-    // when the user emits 'getRooms', we respond with a list of the rooms that user is in
-    socket.on('getRooms', function() {
-        socket.emit('postRooms', socket.rooms);
+        // Check if the other user in this room is online. If not, prompt this user to notify that user
+        var other_user;
+        var room_users = rooms[index].split("-");
+        if(room_users[0] == username) {
+            other_user = room_users[1];
+        } else if(room_users[1] == username) {
+            other_user = room_users[0];
+        } else {
+            console.log("Error in chat notification code.");
+        }
+        if(online_users.indexOf(other_user) < 0) {
+            // User is not online, so prompt client to send a notification
+            socket.emit('notify', other_user, msg);
+        }
     });
 
     // when the user disconnects, perform this
     socket.on('disconnect', function() {
         if (addedUser) {
             console.log(socket.username, 'disconnected');
+            online_users.splice(online_users.indexOf(socket.username), 1);
         }
     });
 });

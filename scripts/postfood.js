@@ -1,3 +1,66 @@
+// Auto fill form from product object
+function useBarcodeInfo(item) {
+    var title = item.generic_name;
+    var imageUrl = item.image_url;
+    var labelTags = item.labels_tags;
+    var labels = item.labels;
+    var ingredients = item.ingredients_text_with_allergens;
+    if (title || imageUrl || labelTags || labels || ingredients) {
+        if (confirm("Do you want to use the following information?\n\n" + title + "\n\n" + ingredients)) {
+            if (title) {
+                $("#txtTitle").val(title);
+            }
+            if (ingredients) {
+                $("#txtDescription").val(ingredients);
+            }
+            if (imageUrl) {
+                // Only works if image supports cross origin access (like imgur)
+                previewFile(imageUrl);
+            }
+            $("#btnStopBarcodeScanning").click();
+        }
+    } else {
+        alert("Product info contains no useful information");
+    }
+}
+
+// Take a barcode, attempt to find a product object and call useBarcodeInfo
+function getBarcodeInfo(code) {
+    // API is beta and very underpopulated, so this mimics it with a few items that the API should contain but doesn't yet
+    var fakePositives = {
+        // TODO Mike AND EVERYONE - populate fake positives
+        "5012035930592": {
+            generic_name: "Haribo Gold Bears",
+            image_url: "http://i.imgur.com/nHty93e.jpg",
+            ingredients_text_with_allergens: "Glucose syrup, sugar, gelatine, dextrose, fruit juice from concentrate (apple, strawberry, raspberry, orange, lemon, pineapple), acid (citric acid), fruit and plant concentrates (nettle, orange, lemon, mango, passion fruit, elderberry, blackcurrant, apple, spinach, aronia, grape), flavour, elderberry extract, glazing agents (white and yellow beeswax, carnauba wax), fruit extract (carob), invert sugar syrup."
+        },
+        "5022313731773": {
+            generic_name: "Tropicana Smooth Orange Juice",
+            image_url: "http://i.imgur.com/LOSol0p.jpg",
+            ingredients_text_with_allergens: "100% orange juice, not from concentrate."
+        }
+    };
+    if (fakePositives.hasOwnProperty(code)) {
+        useBarcodeInfo(fakePositives[code]);
+    } else {
+        var apiURL = "http://world.openfoodfacts.org/api/v0/product/" + code + ".json";
+        $.ajax({
+            type: "GET",
+            url: apiURL,
+            dataType: "json",
+            success: function(data) {
+                if (data.status == 0) {
+                    alert("No product info available for barcode" + code);
+                } else {
+                    useBarcodeInfo(data.product);
+                }
+            },
+            error: function() {}
+        });
+    }
+}
+
+// Sets up a Quagga.js viewport to scan a barcode, and call getBarcodeInfo when a barcode is recognised
 function scanBarcode() {
     if ($("#pnlBarcodeScreen").css("display") == "none") {
         $("#pnlBarcodeScreen").show();
@@ -173,10 +236,12 @@ function scanBarcode() {
                         type: "LiveStream",
                         constraints: {
                             width: {
-                                min: 640
+                                min: 320,
+                                max: 800
                             },
                             height: {
-                                min: 480
+                                min: 180,
+                                max: 450
                             },
                             facingMode: "environment",
                             aspectRatio: {
@@ -213,39 +278,12 @@ function scanBarcode() {
             Quagga.onDetected(function(result) {
                 var code = result.codeResult.code;
 
-                // TODO Mike - Maybe a list of previous codes? Sometimes it detects ones that aren't there
                 if (App.lastResult !== code) {
                     App.lastResult = code;
-                    var $node = null,
-                        canvas = Quagga.canvas.dom.image;
-
-                    var apiURL = "http://world.openfoodfacts.org/api/v0/product/" + code + ".json";
-                    console.log("Querying ", apiURL);
-                    $.ajax({
-                        type: "GET",
-                        url: apiURL,
-                        dataType: "json",
-                        success: function(data) {
-                            if (data.status == 0) {
-                                console.log("No product info found for barcode", code);
-                            } else {
-                                console.log("Found product info", data);
-                                var item = data.product;
-                                var title = item.generic_name; // (_en)
-                                var imageUrl = item.image_url;
-                                var labelTags = item.labels_tags;
-                                var labels = item.labels;
-                                var ingredients = item.ingredients_text_with_allergens; // (_en)
-
-                                alert(title + "\n\n" + imageUrl + "\n\n" + labelTags + "\n\n" + labels);
-
-                                // TODO Mike - FILL FORM
-                            }
-                        },
-                        error: function() {}
-                    });
+                    getBarcodeInfo(code);
                 }
             });
+            window.scrollTo(0, 0);
         } else {
             var alertDiv = $("<div>");
             alertDiv.addClass("alert alert-warning alert-dismissible");
@@ -272,9 +310,9 @@ function scanBarcode() {
     }
 }
 
+// Ensure that necessary inputs have values (image is not required)
 function validInputs() {
     // TODO Maddy? - nicer alerts in this section?
-
     var valid = true;
     $("#frmPost :input[type=text], textarea").each(function() {
         if (valid) {
@@ -295,6 +333,7 @@ function validInputs() {
     return valid;
 }
 
+// Serialise form data, attach image BLOB, attach district data from lat/long, send to server for saving
 function sendPostData() {
     if (validInputs()) {
         var formData = $("#frmPost").serializeArray();
@@ -334,8 +373,6 @@ function sendPostData() {
         } else {
             alert("WARNING - SUBMITTING WHILE NOT LOGGED IN");
         }
-
-        // @Mike, I Added saving location here as googleApi wasn't accessible from index.js
 
         var geocoder = new google.maps.Geocoder;
         var latlng = {
@@ -388,48 +425,57 @@ function sendPostData() {
     }
 }
 
-function previewFile() {
+// Takes OPTIONAL webURL, if given, loads and compresses image to max 380x380 at webURL and puts in preview element
+// otherwise does that with selected file from file input
+function previewFile(webURL) {
     var preview = $("#imgPreview");
     var file = document.querySelector("input[type=file]").files[0];
-    var reader = new FileReader();
-
-    reader.onloadend = function() {
-        var image = new Image();
-        image.onload = function() {
-            // Resize image down
-            var canvas = document.createElement('canvas'),
-                max_size = 380,
-                width = image.width,
-                height = image.height;
-            if (width > height) {
-                if (width > max_size) {
-                    height *= max_size / width;
-                    width = max_size;
-                }
-            } else {
-                if (height > max_size) {
-                    width *= max_size / height;
-                    height = max_size;
-                }
+    var reader;
+    var image = new Image();
+    image.onload = function() {
+        imageSelected = true;
+        // Resize image down
+        var canvas = document.createElement('canvas'),
+            max_size = 380,
+            width = image.width,
+            height = image.height;
+        if (width > height) {
+            if (width > max_size) {
+                height *= max_size / width;
+                width = max_size;
             }
-            canvas.width = width;
-            canvas.height = height;
-            canvas.getContext('2d').drawImage(image, 0, 0, width, height);
-            var dataUrl = canvas.toDataURL('image/jpeg');
-            preview.attr("src", dataUrl);
+        } else {
+            if (height > max_size) {
+                width *= max_size / height;
+                height = max_size;
+            }
         }
-        image.src = reader.result;
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+        var dataUrl = canvas.toDataURL('image/jpeg');
+        preview.attr("src", dataUrl);
     }
 
-    if (file) {
+    if (webURL) {
+        image.crossOrigin = "anonymous";
+        image.src = webURL;
+    } else if (file) {
+        reader = new FileReader();
+        reader.onloadend = function() {
+            image.src = reader.result;
+        }
         reader.readAsDataURL(file); //reads the data as a URL
     } else {
         preview.attr("src", "");
     }
 }
 
+// Create a google map for location selection, start centered on lat lng
 function initMap(lat, lng) {
-    //The center location of our map. DURHAM IS 54.775250, -1.584852
+    //The center location of our map.
+    // DURHAM IS 54.775250, -1.584852
+    // School of engineering and computing sciences is 54.767230, -1.570390
     var centerOfMap = new google.maps.LatLng(lat, lng);
 
     //Map options.
@@ -471,6 +517,7 @@ function initMap(lat, lng) {
     });
 }
 
+// Update lat lng text boxes from marker position (must be called, not automatic)
 function markerLocation() {
     //Get location.
     var currentLocation = marker.getPosition();
@@ -479,12 +526,12 @@ function markerLocation() {
     $("#lng").val(currentLocation.lng()); //longitude
 }
 
+// When window has loaded, initialise map around current location, or default to school of engineering, durham uni
 google.maps.event.addDomListener(window, 'load', function() {
     navigator.geolocation.getCurrentPosition(function(pos) {
         initMap(pos.coords.latitude, pos.coords.longitude);
     }, function(error) {
-        initMap(54.77525, -1.584852);
-        // alert("Could not get your location, defaulting to Durham");
+        initMap(54.767230, -1.570390); // <--- school of engineering // center of durham --> 54.77525, -1.584852
     });
 });
 
@@ -493,6 +540,7 @@ var map; //Will contain map object.
 var marker = false;
 var postID;
 
+// page initialisation
 $(document).ready(function() {
     $("#pnlBarcodeScreen").hide();
 
@@ -507,6 +555,7 @@ $(document).ready(function() {
         previewFile();
     });
 
+    // Load post to edit if available into form, and clear from local storage to avoid getting stuck in edit mode
     if (localStorage.postToEdit) {
         $("#pageTitleH1").text("Edit a food item");
         // console.log(localStorage.postToEdit);
@@ -558,5 +607,3 @@ $(document).ready(function() {
         postID = false;
     }
 });
-
-// TODO Mike - https://en.wiki.openfoodfacts.org/API Open Food Facts API for barcode -> product information for auto fill of form data
